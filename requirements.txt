@@ -1,0 +1,14 @@
+# nvidia-cudnn-cu12==9.1.0.70
+git+https://github.com/MahmoudAshraf97/demucs.git
+nemo_toolkit[asr]>=2.3.0
+transformers==4.53.3
+openai-whisper==20250625
+datasets==4.3.0
+pydub==0.25.1
+yt-dlp==2025.10.22
+torch==2.6.0
+torchaudio==2.6.0
+omegaconf==2.3.0
+ollama==0.6.0
+tqdm==4.67.1
+speechbrain==1.0.3

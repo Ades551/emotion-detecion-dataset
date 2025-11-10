@@ -1,0 +1,7 @@
+.venv/
+.cache_pipeline/
+dataset/
+results/
+wav2vec*
+src/.*
+*__pycache__*

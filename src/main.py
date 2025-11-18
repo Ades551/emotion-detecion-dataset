@@ -62,21 +62,27 @@ if __name__ == "__main__":
     all_segments: list[Segment] = []
     s_det = SegmentDetection()
 
-    # analyzer = EmotionAnalyzer(backend="wav2vec")
-    # result_wav2vec = []
+    analyzer_wav2vec = EmotionAnalyzer(backend="wav2vec")
+    result_wav2vec = []
+
+    analyzer_laion = EmotionAnalyzer(backend="laion")
+    result_laion = []
 
     for i, (vocal_audio, mono_16k_audio) in enumerate(zip(audio.audio_vocals, audio.audio_chunks_16k)):
         offset_s = i * (audio.chunk_duration_ms / 1000.0)
 
         try:
             segments = s_det.detect_segments(vocal_audio=vocal_audio, mono_16k_audio=mono_16k_audio)
-            # result_wav2vec.extend(analyzer.analyze(segments, mono_16k_audio))
+            result_wav2vec.extend(analyzer_wav2vec.analyze(segments, mono_16k_audio))
+            result_laion.extend(analyzer_laion.analyze(segments, mono_16k_audio))
             
             segments = apply_time_offset(segments=segments, offset_seconds=offset_s)
             all_segments.extend(segments)
 
         except Exception as e:
             print(f"Skipping chunk {i+1} due to error: {e}")
+
+    print(all_segments)
 
     analyzer = EmotionAnalyzer(backend="llm")
     result_llm = analyzer.analyze(all_segments)
@@ -89,7 +95,7 @@ if __name__ == "__main__":
 
     for i, segment in enumerate(all_segments):
         # {"czech_roberta": cz_roberta[idx]} | {"wav2vec": wav2vec[idx]} | {"llm": llm[idx]}
-        segment.emotion |= {"llm": result_llm[i]} | {"czech_roberta": result_roberta[i]} #| {"wav2vec": result_wav2vec[i]}
+        segment.emotion |= {"llm": result_llm[i]} | {"czech_roberta": result_roberta[i]} | {"wav2vec": result_wav2vec[i]} | {"laion": result_laion[i]}
 
     output_dir = Path("results/")
     output_dir.mkdir(exist_ok=True)
@@ -104,4 +110,3 @@ if __name__ == "__main__":
             }, f, indent=2, ensure_ascii=False)
 
     print(f"Finished. Results saved to {output_path}")
-

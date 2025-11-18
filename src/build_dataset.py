@@ -4,7 +4,14 @@ from pathlib import Path
 from pydub import AudioSegment
 from tqdm import tqdm
 import sys
+from LAION.predict import predict as predict_emotion, mlps
 
+def merge_models_attributes(json_models_attrs):
+    merged_attrs = {}
+    merged_attrs["llm"] = 1.0 if json_models_attrs["llm"].get("emotion", "none") != "none" else 0.0
+    merged_attrs["czech_roberta"] = json_models_attrs["czech_roberta"].get("score", 0.0) if json_models_attrs["czech_roberta"].get("emotion", "none") != "none" else 0.0
+    merged_attrs["wav2vec"] = json_models_attrs["wav2vec"].get("score", 0.0) if json_models_attrs["wav2vec"].get("emotion", "none") != "none" else 0.0 
+    return merged_attrs | json_models_attrs["laion"] 
 
 def build_dataset(data_json_path: Path, output_dir: Path):
     """
@@ -34,17 +41,20 @@ def build_dataset(data_json_path: Path, output_dir: Path):
         end_ms = int(seg["end"] * 1000)
         clip = audio[start_ms:end_ms]
 
-        roberta_score = seg["emotion"]["czech_roberta"].get("score", 0.0)
+        emotion_pred = predict_emotion(merge_models_attributes(seg["emotion"]))
+        final_emotion = "emotion" if emotion_pred else "none"
 
+        roberta_score = seg["emotion"]["czech_roberta"].get("score", 0.0)
         if roberta_score > 0.8:
-            final_emotion = seg["emotion"]["czech_roberta"]["emotion"]
+            #final_emotion = seg["emotion"]["czech_roberta"]["emotion"]
             final_sentiment = seg["emotion"]["czech_roberta"]["sentiment"]
             source_model = "czech_roberta"
         else:
-            final_emotion = seg["emotion"]["llm"]["emotion"]
+            #final_emotion = seg["emotion"]["llm"]["emotion"]
             final_sentiment = seg["emotion"]["llm"]["sentiment"]
             source_model = "llm"
 
+            
         # --- Define folder paths ---
         label_folder = "no-emotion" if final_emotion == "none" else "emotion"
         clip_dir = dataset_root / label_folder / f"{yt_id}_{i:03d}"

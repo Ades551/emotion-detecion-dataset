@@ -15,6 +15,9 @@ import subprocess
 
 from models import Segment
 
+from LAION.predict import predict as predict_emotion, mlps
+from LAION.empathic_inside_voice_predict import predict as laion_predict
+
 # -------------------------------------------------------------------------
 # Data Structures
 # -------------------------------------------------------------------------
@@ -22,6 +25,16 @@ class Emotion(TypedDict):
     emotion: str
     sentiment: str
     score: float
+
+class LaionAttributes(TypedDict):
+    valence : float
+    submissive_vs_dominant : float 
+    serious_vs_humorous : float  
+    confident_vs_hesitant : float 
+    warm_vs_cold : float
+    monotone_vs_expressive : float
+    high_pitched_vs_low_pitched : float
+    soft_vs_harsh : float
 
 PROMPT_TEMPLATE_SENTIMENT = """
 Jsi expert na porozumění emocím a sentimentu v češtině.
@@ -116,6 +129,32 @@ class EmotionAnalyzer:
     # -------------------------------------------------------------------------
     # 2. Wav2Vec2 Audio Model
     # -------------------------------------------------------------------------
+
+    def analyze_laion(self, mono_16k_audio: Path, segments: list[Segment]) -> list[Emotion]:
+        """Infer emotions directly from audio waveform."""
+        audio = AudioSegment.from_file(mono_16k_audio)
+        results = []
+        for seg in tqdm(segments, desc="Analyzing with Laion"):
+            start_ms, end_ms = int(seg.start * 1000), int(seg.end * 1000)
+            clip = audio[start_ms:end_ms]
+            clip.export("./clip.wav", format="wav")
+            laion_output = laion_predict(mlps_to_use=mlps, generate_html_file=False, audio_files_for_html_report=["./clip.wav"])
+            attributes_values = laion_output["./clip.wav"]
+            results.append(
+                LaionAttributes(
+                    valence=attributes_values["Valence"],
+                    submissive_vs_dominant=attributes_values["Submissive_vs._Dominant"],
+                    serious_vs_humorous=attributes_values["Serious_vs._Humorous"],
+                    confident_vs_hesitant=attributes_values["Confident_vs._Hesitant"],
+                    warm_vs_cold=attributes_values["Warm_vs._Cold"],
+                    monotone_vs_expressive=attributes_values["Monotone_vs._Expressive"],
+                    high_pitched_vs_low_pitched=attributes_values["High-Pitched_vs._Low-Pitched"],
+                    soft_vs_harsh=attributes_values["Soft_vs._Harsh"],
+                )
+            )
+        os.unlink("./clip.wav")
+        return results
+
     def analyze_wav2vec(self, mono_16k_audio: Path, segments: list[Segment]) -> list[Emotion]:
         """Infer emotions directly from audio waveform."""
         audio = AudioSegment.from_file(mono_16k_audio)
@@ -148,7 +187,7 @@ class EmotionAnalyzer:
         results = []
         for t in tqdm(texts, desc="Analyzing with Ollama LLM"):
             response = ollama.chat(
-                model="gemma3:12b",
+                model="gemma3:4b",
                 messages=[{"role": "user", "content": PROMPT_TEMPLATE_SENTIMENT.format(text=t)}],
                 stream=False,
                 format="json"
@@ -167,13 +206,13 @@ class EmotionAnalyzer:
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
-                "model": "gemma3:12b",
+                "model": "gemma3:4b",
                 "keep_alive": 0
             }
         )
         response.raise_for_status()
 
-        subprocess.run(["ollama", "stop", "gemma3:12b"], capture_output=True, check=False)
+        subprocess.run(["ollama", "stop", "gemma3:4b"], capture_output=True, check=False)
         process.kill()
         time.sleep(5)
         return results
@@ -192,5 +231,9 @@ class EmotionAnalyzer:
             return self.analyze_wav2vec(audio_file, segments)
         elif self.backend == "llm":
             return self.analyze_llm(texts)
+        elif self.backend == "laion":
+            if audio_file is None:
+                raise ValueError("audio_file must be provided for laion backend.")
+            return self.analyze_laion(audio_file, segments)
         else:
             raise ValueError(f"Unknown backend: {self.backend}")

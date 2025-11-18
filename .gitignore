@@ -5,3 +5,4 @@ results/
 wav2vec*
 src/.*
 *__pycache__*
+empathic_insight_voice_small_models_downloaded

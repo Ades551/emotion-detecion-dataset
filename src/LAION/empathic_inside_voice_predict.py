@@ -15,7 +15,7 @@ except ImportError:
     PYDUB_AVAILABLE = False
     # logging.warning("pydub not available for audio embedding in HTML.") # Logging setup in Cell 1/2
 
-
+from pprint import pp
 # --- Helper functions (find_audio_files_in_folder, get_prediction_with_single_mlp,
 # --- get_whisper_embedding_for_audio, convert_audio_to_base64_mp3_for_html,
 # --- generate_waveform_plot_base64) are assumed to be the same as the previous good version.
@@ -263,7 +263,6 @@ def generate_batch_html_report_updated(
     return final_html
 
 def predict(mlps_to_use = None, generate_html_file = True, audio_files_for_html_report = []):
-
     if audio_files_for_html_report == []:
         # --- Main execution for Cell 3 ---
         logging.info("--- Starting Cell 3: Batch HTML Report Generation (Updated) ---")

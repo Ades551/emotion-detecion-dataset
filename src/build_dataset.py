@@ -7,83 +7,84 @@ import sys
 from LAION.predict import predict as predict_emotion, mlps
 
 def merge_models_attributes(json_models_attrs):
+    """
+    Helper function to merge emotion scores from multiple models, 
+    preparing data for the emotion prediction model.
+    """
     merged_attrs = {}
+    # Convert LLM 'none'/'emotion' label to 0.0/1.0 score
     merged_attrs["llm"] = 1.0 if json_models_attrs["llm"].get("emotion", "none") != "none" else 0.0
+    # Extract scores for other models, setting to 0.0 if 'none'
     merged_attrs["czech_roberta"] = json_models_attrs["czech_roberta"].get("score", 0.0) if json_models_attrs["czech_roberta"].get("emotion", "none") != "none" else 0.0
     merged_attrs["wav2vec"] = json_models_attrs["wav2vec"].get("score", 0.0) if json_models_attrs["wav2vec"].get("emotion", "none") != "none" else 0.0 
-    return merged_attrs | json_models_attrs["laion"] 
+    # Merge with LAION attributes
+    return merged_attrs | json_models_attrs["laion"]
 
 def build_dataset(data_json_path: Path, output_dir: Path):
     """
-    Build dataset folders with labeled audio clips from annotated segment metadata.
+    Build dataset folders with labeled audio clips using a flat structure:
+    output_dir/emotion/ and output_dir/no-emotion/.
     
     Args:
-        data_json_path: Path to the JSON file with structure shown above.
-        output_dir: Root folder for the generated dataset.
+        data_json_path: Path to the JSON file with segment metadata.
+        output_dir: Root folder for the generated dataset (e.g., "dataset").
     """
     with open(data_json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    yt_id = Path(data["recording"]).stem  # e.g., "AHUceoo-L6k"
+    # Use the filename of the recording as the YouTube ID
+    yt_id = Path(data["recording"]).stem 
     audio = AudioSegment.from_file(data["recording"])
 
-    url = data["url"]
+    # Define the final target directories
+    emotion_dir = output_dir / "emotion"
+    no_emotion_dir = output_dir / "no-emotion"
+    
+    # Ensure the target directories exist
+    emotion_dir.mkdir(parents=True, exist_ok=True)
+    no_emotion_dir.mkdir(parents=True, exist_ok=True)
 
-    # Prepare target root
-    dataset_root = output_dir / yt_id
-    shutil.rmtree(dataset_root, ignore_errors=True)
-    dataset_root.mkdir(parents=True, exist_ok=True)
+    print(f"[INFO] Building dataset for {yt_id} into {output_dir.name}/(emotion|no-emotion) ...")
 
-    print(f"[INFO] Building dataset for {yt_id} ...")
+    total_duration_sec = 0.0
 
-    for i, seg in enumerate(tqdm(data["segments"], desc="Processing segments"), 1):
+    for seg in tqdm(data["segments"], desc="Processing segments"):
         start_ms = int(seg["start"] * 1000)
         end_ms = int(seg["end"] * 1000)
+        
+        total_duration_sec += (seg["end"] - seg["start"])
+
         clip = audio[start_ms:end_ms]
 
+        # 1. Predict final emotion label
         emotion_pred = predict_emotion(merge_models_attributes(seg["emotion"]))
         final_emotion = "emotion" if emotion_pred else "none"
-
-        roberta_score = seg["emotion"]["czech_roberta"].get("score", 0.0)
-        if roberta_score > 0.8:
-            #final_emotion = seg["emotion"]["czech_roberta"]["emotion"]
-            final_sentiment = seg["emotion"]["czech_roberta"]["sentiment"]
-            source_model = "czech_roberta"
-        else:
-            #final_emotion = seg["emotion"]["llm"]["emotion"]
-            final_sentiment = seg["emotion"]["llm"]["sentiment"]
-            source_model = "llm"
-
             
-        # --- Define folder paths ---
-        label_folder = "no-emotion" if final_emotion == "none" else "emotion"
-        clip_dir = dataset_root / label_folder / f"{yt_id}_{i:03d}"
-        clip_dir.mkdir(parents=True, exist_ok=True)
+        # 2. Determine target directory based on the final emotion
+        clip_dir = emotion_dir if final_emotion == "emotion" else no_emotion_dir
+        
+        # --- START OF FILENAME CHANGE ---
+        # 3. Use millisecond timestamps for filename precision
+        # Example values: start_ms = 71775, end_ms = 88775
+        
+        # 4. Define the new filename format
+        # Example: frame_AHUceoo-L6k_71775ms_88775ms.mp3
+        clip_filename = f"{yt_id}_{start_ms:08d}_{end_ms:08d}.mp3"
+        # --- END OF FILENAME CHANGE ---
+        
+        clip_path = clip_dir / clip_filename
 
-        # --- Save clip ---
-        clip_path = clip_dir / f"{yt_id}_{i:03d}.mp3"
+        # 5. Save clip
         clip.export(clip_path, format="mp3")
 
-        # --- Save metadata ---
-        metadata = {
-            "id": yt_id,
-            "url": f"{url}&t={int(seg['start'])}s",
-            "index": i,
-            "start": seg["start"],
-            "end": seg["end"],
-            "duration": seg["duration"],
-            "text": seg["text"],
-            "emotion_llm": seg["emotion"]["llm"],
-            "emotion_roberta": seg["emotion"]["czech_roberta"],
-            "final_emotion": final_emotion,
-            "final_sentiment": final_sentiment,
-            "source_model": source_model,
-        }
+        # Note: The step to save metadata is intentionally skipped as requested.
 
-        with open(clip_dir / f"{yt_id}_{i:03}.json", "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
+    hours = int(total_duration_sec // 3600)
+    minutes = int((total_duration_sec % 3600) // 60)
+    seconds = int(total_duration_sec % 60)
+    print(f"[INFO] Total dataset length: {hours}h {minutes}m {seconds}s")
 
-    print(f"[INFO] Dataset created at: {dataset_root}")
+    print(f"[INFO] Dataset created. Clips are organized in {output_dir.name}/emotion and {output_dir.name}/no-emotion.")
 
 
 if __name__ == "__main__":

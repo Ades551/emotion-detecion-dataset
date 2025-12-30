@@ -5,7 +5,6 @@ from pathlib import Path
 import time
 import json
 from pydub import AudioSegment
-import os
 from typing import TypedDict, Literal
 from tqdm import tqdm
 import requests
@@ -152,7 +151,7 @@ class EmotionAnalyzer:
                     soft_vs_harsh=attributes_values["Soft_vs._Harsh"],
                 )
             )
-        os.unlink("./clip.wav")
+        Path("./clip.wav").unlink(missing_ok=True)
         return results
 
     def analyze_wav2vec(self, mono_16k_audio: Path, segments: list[Segment]) -> list[Emotion]:
@@ -173,8 +172,8 @@ class EmotionAnalyzer:
                     score=score.item(),
                 )
             )
-
-        os.unlink("./clip.wav")
+        
+        Path("./clip.wav").unlink(missing_ok=True)
         return results
     
     # -------------------------------------------------------------------------
@@ -187,7 +186,7 @@ class EmotionAnalyzer:
         results = []
         for t in tqdm(texts, desc="Analyzing with Ollama LLM"):
             response = ollama.chat(
-                model="gemma3:4b",
+                model="gemma3:12b",
                 messages=[{"role": "user", "content": PROMPT_TEMPLATE_SENTIMENT.format(text=t)}],
                 stream=False,
                 format="json"
@@ -206,13 +205,13 @@ class EmotionAnalyzer:
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
-                "model": "gemma3:4b",
+                "model": "gemma3:12b",
                 "keep_alive": 0
             }
         )
         response.raise_for_status()
 
-        subprocess.run(["ollama", "stop", "gemma3:4b"], capture_output=True, check=False)
+        subprocess.run(["ollama", "stop", "gemma3:12b"], capture_output=True, check=False)
         process.kill()
         time.sleep(5)
         return results

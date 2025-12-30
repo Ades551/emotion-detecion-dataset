@@ -1,18 +1,29 @@
 import numpy as np
 
+# mlps = [
+#         "valence",
+#         #"Arousal", 
+#         "submissive_vs_dominant", 
+#         "serious_vs_humorous", 
+#         #"Vulnerable_vs._Emotionally_Detached", 
+#         "confident_vs_hesitant", 
+#         "warm_vs_cold",
+#         "monotone_vs_expressive",
+#         "high_pitched_vs_low_pitched",
+#         "soft_vs_harsh",
+#         #"Authenticity"
+# ]
+
 mlps = [
-        "valence",
-        #"Arousal", 
-        "submissive_vs_dominant", 
-        "serious_vs_humorous", 
-        #"Vulnerable_vs._Emotionally_Detached", 
-        "confident_vs_hesitant", 
-        "warm_vs_cold",
-        "monotone_vs_expressive",
-        "high_pitched_vs_low_pitched",
-        "soft_vs_harsh",
-        #"Authenticity"
-]
+        "Valence",
+        "Submissive_vs._Dominant", 
+        "Serious_vs._Humorous",
+        "Confident_vs._Hesitant", 
+        "Warm_vs._Cold",
+        "Monotone_vs._Expressive",
+        "High-Pitched_vs._Low-Pitched",
+        "Soft_vs._Harsh"
+        ]
 
 attributes = {
         "valence" : "BIPO",

@@ -30,11 +30,12 @@ def segment_to_dict(s):
     d = asdict(s)
 
     # Drop unwanted fields if present
-    for key in ("speaker", "label"):
+    for key in ("speaker", "label", "words"):
         d.pop(key, None)
     
     # Always include duration
     d["duration"] = getattr(s, "duration", s.end - s.start)
+    d["text"] = s.text
 
     return d
 
@@ -73,6 +74,10 @@ if __name__ == "__main__":
 
         try:
             segments = s_det.detect_segments(vocal_audio=vocal_audio, mono_16k_audio=mono_16k_audio)
+
+            if not segments:
+                continue
+
             result_wav2vec.extend(analyzer_wav2vec.analyze(segments, mono_16k_audio))
             result_laion.extend(analyzer_laion.analyze(segments, mono_16k_audio))
             
@@ -81,8 +86,6 @@ if __name__ == "__main__":
 
         except Exception as e:
             print(f"Skipping chunk {i+1} due to error: {e}")
-
-    print(all_segments)
 
     analyzer = EmotionAnalyzer(backend="llm")
     result_llm = analyzer.analyze(all_segments)

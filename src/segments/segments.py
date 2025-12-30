@@ -21,12 +21,75 @@ random.seed(42)
 class SegmentDetection:
     def detect_segments(self, vocal_audio: Path, mono_16k_audio: Path, max_gap_treshold: float = 1.0) -> list[Segment]:
         segments = self.diarize_recording(mono_16k_audio)
+
+        if not segments:
+            return []
+
         words = self.transcribe(vocal_audio)
         segments = self.align_words(words, segments)
         segments = self.merge_segments(segments=segments, max_gap_treshold=max_gap_treshold)
+        segments = self.split_oversized_segments(segments=segments, max_duration=30.0)
         segments = self.filter_segments(segments=segments)
 
         return segments
+
+    def split_oversized_segments(self, segments: list[Segment], max_duration: float = 30.0) -> list[Segment]:
+        final_segments = []
+        
+        for seg in segments:
+            if seg.duration <= max_duration:
+                final_segments.append(seg)
+                continue
+            
+            if not seg.words:
+                continue 
+
+            current_words = seg.words
+            
+            while current_words:
+                start_time = current_words[0]["start"]
+                end_time = current_words[-1]["end"]
+                
+                if (end_time - start_time) <= max_duration:
+                    final_segments.append(self._create_segment_from_words(seg.speaker, current_words))
+                    break
+                
+                split_index = -1
+                limit_index = 0
+                
+                # Find the last word that fits in max_duration
+                for i, word in enumerate(current_words):
+                    if (word["end"] - start_time) > max_duration:
+                        break
+                    limit_index = i
+                
+                # Search backwards for a sentence boundary
+                found_boundary = False
+                sentence_boundaries = {".", "?", "!"}
+                
+                for i in range(limit_index, -1, -1):
+                    if any(current_words[i]["word"].strip().endswith(p) for p in sentence_boundaries):
+                        split_index = i + 1
+                        found_boundary = True
+                        break
+                
+                if not found_boundary:
+                    split_index = limit_index + 1
+                
+                if split_index <= 0:
+                    split_index = 1
+                
+                chunk_words = current_words[:split_index]
+                current_words = current_words[split_index:]
+                
+                final_segments.append(self._create_segment_from_words(seg.speaker, chunk_words))
+                
+        return final_segments
+
+    def _create_segment_from_words(self, speaker: str, words: list[dict]) -> Segment:
+        start = words[0]["start"]
+        end = words[-1]["end"]
+        return Segment(speaker=speaker, start=start, end=end, words=words)
 
     def filter_segments(
             self, 
@@ -62,7 +125,9 @@ class SegmentDetection:
             is_close_enough = (gap <= max_gap_treshold)
 
             if is_close_enough and (is_same_speaker or one_is_unknown):
-                last_merged.text += " " + curr_seg.text
+                last_merged.words.extend(curr_seg.words)
+                if "text" in last_merged.__dict__:
+                    del last_merged.text
                 last_merged.end = curr_seg.end
 
                 if last_merged.speaker == 'UNKNOWN' and curr_seg.speaker != 'UNKNOWN':
@@ -71,9 +136,9 @@ class SegmentDetection:
                 merged_segments.append(
                     Segment(
                         speaker=curr_seg.speaker,
-                        text=curr_seg.text.strip(),
                         start=curr_seg.start,
-                        end=curr_seg.end
+                        end=curr_seg.end,
+                        words=curr_seg.words
                     )
                 )
 
@@ -96,15 +161,16 @@ class SegmentDetection:
 
         # --- 2. Assign sentences to the segments ---
         for seg in segments:
+            seg.words = []
             for sentence in sentences:
                 start = sentence[0]["start"]
                 end = sentence[-1]["end"]
 
                 if seg.start <= ((start + end) / 2) <= seg.end:
-                    seg.text += ' '.join([w["word"] for w in sentence])
-                    seg.text += " "
+                    seg.words.extend(sentence)
 
-            seg.text = seg.text.strip()
+            if "text" in seg.__dict__:
+                del seg.text
 
         return segments
 
@@ -179,24 +245,29 @@ class SegmentDetection:
             cfg.diarizer.oracle_vad = False
         if "oracle_num_speakers" in cfg.diarizer:
             cfg.diarizer.oracle_num_speakers = False
-
-        # -------------------------------------------------------------------------
-        # 3. Run diarization
-        # -------------------------------------------------------------------------
-        diarizer = ClusteringDiarizer(cfg=cfg)
-        diarizer.diarize()
-
-        # -------------------------------------------------------------------------
-        # 4. Get RTTM path
-        # -------------------------------------------------------------------------
-        rttm_dir = temp_dir / "pred_rttms"
-        rttm_files = list(rttm_dir.glob("*.rttm"))
-        if not rttm_files:
-            raise FileNotFoundError(f"No RTTM files generated in {rttm_dir}")
         
-        # -------------------------------------------------------------------------
-        # 5. Create Segments
-        # -------------------------------------------------------------------------
+        try:
+            # -------------------------------------------------------------------------
+            # 3. Run diarization
+            # -------------------------------------------------------------------------
+            diarizer = ClusteringDiarizer(cfg=cfg)
+            diarizer.diarize()
+
+            # -------------------------------------------------------------------------
+            # 4. Get RTTM path
+            # -------------------------------------------------------------------------
+            rttm_dir = temp_dir / "pred_rttms"
+            rttm_files = list(rttm_dir.glob("*.rttm"))
+            if not rttm_files:
+                raise FileNotFoundError(f"No RTTM files generated in {rttm_dir}")
+            
+            # -------------------------------------------------------------------------
+            # 5. Create Segments
+            # -------------------------------------------------------------------------
+        except ValueError:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return []
+            
         speaker_segments: list[Segment] = []
 
         for line in rttm_files[0].read_text().splitlines():
